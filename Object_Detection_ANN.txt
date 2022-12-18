@@ -1,0 +1,192 @@
+import cv2
+import os
+import numpy as np
+from sklearn import metrics
+from tensorflow.keras.utils import to_categorical
+from sklearn.metrics import confusion_matrix, accuracy_score
+import tensorflow as tf
+from tensorflow import keras
+from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
+from keras.applications.vgg16 import VGG16
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import label_binarize
+import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt    
+
+data_path = r"D:\BasicTraining (1)\train"
+img_size=256             
+counter=0            
+X=[]
+Y=[]
+
+categories=os.listdir(data_path)
+ 
+for category in categories:                                                            
+    folder_path=os.path.join(data_path,category)                                       
+    img_names=os.listdir(folder_path)                                                  
+ 
+    for img_name in img_names:
+        img_path=os.path.join(folder_path,img_name)
+        fullpath=os.path.join(data_path,category,img_name)
+        try:
+            img = cv2.imread(fullpath, cv2.IMREAD_COLOR)
+            img = cv2.resize(img, (img_size,img_size))
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            X.append(img)
+            Y.append(category)
+            counter+=1
+            print("Reprocessing Image Number: ",counter)
+        except:
+            print("Error in Image Number ==> ",counter)
+ 
+imgs=np.array(X)
+lbls=np.array(Y)
+
+
+#Label Encoding Convert Categories to Number cuz Model understand
+le = preprocessing.LabelEncoder()
+le.fit(lbls)
+lbls_encoded = le.transform(lbls)
+#Train and Test Split
+train_x, test_x,train_y, test_y = train_test_split(imgs,lbls_encoded,test_size=0.1)
+ 
+#Normalization 
+train_x, test_x = train_x / 255.0,  test_x / 255.0
+
+VGG_model = VGG16(weights='imagenet', include_top=False, input_shape=(img_size,img_size, 3))
+ 
+for layer in VGG_model.layers:
+	layer.trainable = False   # 3lsahn overfit ll ACCURACY lma twsl 100% m3naha fe error fe model fa train zayd mo4kla
+ 
+VGG_model.summary()  
+feature_extractor=VGG_model.predict(train_x) #Extract Features From Photo
+features = feature_extractor.reshape(feature_extractor.shape[0], -1) 
+X_for_RF = features
+
+feature_extractor_test=VGG_model.predict(test_x)
+features_test = feature_extractor_test.reshape(feature_extractor_test.shape[0], -1)
+model = keras.models.Sequential([   # layers of Ann
+    keras.layers.Flatten(),
+    keras.layers.Dense(300, activation="relu"),
+    keras.layers.Dense(100, activation="relu"),
+    keras.layers.Dense(10, activation="softmax")])
+
+model.compile(loss="sparse_categorical_crossentropy",optimizer="sgd",metrics=["accuracy"])
+
+ann=model.fit(X_for_RF, train_y, epochs=30,validation_data=(features_test, test_y))
+
+y_preds = model.predict(features_test).argmax(axis=1)
+
+Accuracy = accuracy_score(test_y,y_preds)  # Accuracy of Model
+
+print("Accuracy :", Accuracy)
+
+# show Loss Curve in Model
+print("Loss Curve :")
+plt.plot(ann.history['loss'])
+plt.plot(ann.history['val_loss'])
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Val'], loc='upper right')
+plt.show()
+
+cm = confusion_matrix(test_y, y_preds)
+print("Confusion Matrix :")
+print(cm)
+
+
+# show False Positive Rate & True Positive & Receiver operating characteristic in Model
+n_classes=5;
+test_y2 = label_binarize(test_y, classes=[0,1,2,3,4,5])
+pred2 = label_binarize(y_preds, classes=[0,1,2,3,4,5])
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
+for i in range(5):
+    fpr[i], tpr[i], _ = roc_curve(test_y2[:, i], pred2[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
+# Plot of a ROC curve for a specific class
+for i in range(5):
+    plt.figure()
+    plt.plot(fpr[i], tpr[i], label='ROC curve (area = %0.2f)' % roc_auc[i])
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic example')
+    plt.legend(loc="lower right")
+    plt.show()
+----------------------------------------------------------------------------------------------------------
+# GUI With Function predict Model & Detect
+
+from tkinter import *
+import tkinter as tk
+from tkinter import filedialog
+from tkinter.filedialog import askopenfile
+from PIL import Image, ImageTk
+ 
+Main = tk.Tk()
+Main.geometry("600x600")  # Size of the window 
+Main.resizable(width=False, height=False)
+Main.title('Object Detection')
+Main['background']='#21374d' 
+my_font1=('times', 25, 'bold')
+my_font2=('times', 16, 'bold')
+label = tk.Label(Main,text='Upload Image',width=30,font=my_font1)
+label.grid(row=1,column=1,pady=100,padx=100)
+label['background']='#2074b0' 
+label.place(anchor = CENTER, relx = .5, rely = .025)
+ 
+ 
+b1 = tk.Button(Main, text='Upload Images', width=20,command = lambda:upload_file())
+b1.grid(row=2,column=1,pady=5)
+b1.place(anchor = CENTER, relx = .5, rely = .095)
+
+def upload_file():
+    f_types = [('Jpg Files', '*.jpg'),
+    ('PNG Files','*.png'),('Jpeg Files', '*.jpeg')]   # types of files to select 
+    filename = tk.filedialog.askopenfilename(multiple=True,filetypes=f_types)
+
+    col=1 # start from column 1
+    row=3 # start from row 3 
+    for pathgui in filename:
+        img=Image.open(pathgui)# read the image file
+        list_of_images = []
+        img_preprocessed = cv2.imread(pathgui, cv2.IMREAD_COLOR)
+        img_preprocessed = cv2.resize(img_preprocessed, (img_size,img_size))
+        img_preprocessed = cv2.cvtColor(img_preprocessed, cv2.COLOR_RGB2BGR)
+        list_of_images.append(img_preprocessed)
+        
+        arr = np.array(list_of_images)
+        
+        feature_extractor_test=VGG_model.predict(arr)
+        
+        features_test = feature_extractor_test.reshape(feature_extractor_test.shape[0], -1)
+        
+        Ann_input = model.predict(features_test).argmax(axis=1)
+
+        Ann_input_Normal = le.inverse_transform(Ann_input)
+
+        img=img.resize((144,144)) 
+        img=ImageTk.PhotoImage(img)
+        e1 =tk.Label(Main)
+        e1.grid(row=row,column=col,pady=100,padx=10)
+        e1.image = img
+        e1.place(anchor = CENTER, relx = .5, rely = .355)
+        text_answer=Ann_input_Normal
+        text_answer=text_answer.tolist()
+        l2 = tk.Label(Main,text=text_answer,width=30,font=my_font2)  
+        l2.grid(row=row+1,column=col,pady=0,padx=10)
+        l2.place(anchor = CENTER, relx = .5, rely = .555)
+        l2['background']='#fff'
+        e1['image']=img # garbage collection
+        if(col==7):
+            row=row+2
+            col=1    
+        else:      
+            col=col+1  
+Main.mainloop() 
